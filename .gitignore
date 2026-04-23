@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+Package.resolved
+AudioFollower.app/
+*.xcodeproj/
+.DS_Store
