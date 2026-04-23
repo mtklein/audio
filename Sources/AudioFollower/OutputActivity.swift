@@ -21,7 +21,7 @@ final class OutputActivityWatcher {
     func start() {
         // Prime state, emit for anything already running.
         tick(fireForExisting: true)
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.tick(fireForExisting: false)
         }
     }
@@ -69,6 +69,12 @@ final class OutputActivityWatcher {
                 let reason = (was == nil && fireForExisting) ? "startup" : "transition"
                 if let pid = pidOf(id), pid > 0, pid != getpid() {
                     emitPID(pid, reason: reason)
+                }
+            } else if !running && was == true {
+                // Log transition OFF so the log reads as a full narrative.
+                if let pid = pidOf(id), pid > 0, pid != getpid() {
+                    let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "?"
+                    Log.write("audio stopped: pid=\(pid) (\(name))")
                 }
             }
         }

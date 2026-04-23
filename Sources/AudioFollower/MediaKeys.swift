@@ -1,4 +1,5 @@
 import AppKit
+import IOKit.hid
 
 // Global monitor for the six system media keys (prev / play-pause / next /
 // mute / volume-down / volume-up). Any press triggers a re-evaluation of
@@ -30,7 +31,14 @@ final class MediaKeyListener {
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { [weak self] ev in
             self?.handle(ev)
         }
-        Log.write("MediaKeyListener installed (global=\(globalMonitor != nil))")
+        let access: String = {
+            switch IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) {
+            case kIOHIDAccessTypeGranted: return "granted"
+            case kIOHIDAccessTypeDenied: return "denied"
+            default: return "unknown"
+            }
+        }()
+        Log.write("MediaKeyListener installed (global=\(globalMonitor != nil) inputMonitoring=\(access))")
     }
 
     private func handle(_ event: NSEvent) {

@@ -52,6 +52,38 @@ enum AudioRouter {
         listOutputDevices().first(where: { $0.id == id })?.name
     }
 
+    // Fires when the system default output device changes (e.g. user
+    // picked a different device in Control Center, we called
+    // setDefaultOutput, or a device was unplugged and macOS auto-routed).
+    @discardableResult
+    static func addDefaultOutputListener(_ handler: @escaping (AudioDeviceID) -> Void) -> Bool {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        let status = AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &addr, .main
+        ) { _, _ in
+            if let id = currentDefaultOutput() { handler(id) }
+        }
+        return status == noErr
+    }
+
+    // Fires when the set of audio devices changes (plug/unplug, sleep/wake).
+    @discardableResult
+    static func addDeviceListListener(_ handler: @escaping ([Device]) -> Void) -> Bool {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        let status = AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &addr, .main
+        ) { _, _ in
+            handler(listOutputDevices())
+        }
+        return status == noErr
+    }
+
     // MARK: - Private
 
     private static func makeDevice(_ id: AudioDeviceID) -> Device? {

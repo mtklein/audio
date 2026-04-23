@@ -20,6 +20,22 @@ enum Log {
 
     private static let lock = NSLock()
 
+    // Rotate the log once per launch when it exceeds ~1 MB. Keeps one
+    // previous file (`AudioFollower.log.1`) so recent history isn't lost,
+    // while preventing unbounded growth over weeks of uptime.
+    static func initialize() {
+        lock.lock()
+        defer { lock.unlock() }
+        let maxBytes = 1_000_000
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+              let size = attrs[.size] as? Int,
+              size > maxBytes
+        else { return }
+        let rotated = fileURL.deletingLastPathComponent().appendingPathComponent("AudioFollower.log.1")
+        try? FileManager.default.removeItem(at: rotated)
+        try? FileManager.default.moveItem(at: fileURL, to: rotated)
+    }
+
     static func write(_ message: String) {
         lock.lock()
         defer { lock.unlock() }

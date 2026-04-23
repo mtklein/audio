@@ -20,7 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastStatusLine = "Idle"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Log.initialize()
         Log.write("launch pid=\(getpid())")
+        logEnvironment()
+
         setupStatusItem()
         watcher.onPlayStart = { [weak self] event in
             self?.handlePlayStart(event)
@@ -40,6 +43,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         relocateTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.relocateIfWindowMoved()
         }
+
+        // Keep the menu's "Output:" line in sync with the real world (user
+        // changed output in Control Center, device plugged/unplugged, we
+        // routed, macOS auto-routed on wake, etc.) and log each change.
+        AudioRouter.addDefaultOutputListener { [weak self] id in
+            let name = AudioRouter.deviceName(id) ?? "id=\(id)"
+            Log.write("default output → \(name)")
+            self?.rebuildMenu()
+        }
+        AudioRouter.addDeviceListListener { [weak self] devices in
+            Log.write("device list changed: \(devices.map(\.name).joined(separator: ", "))")
+            self?.rebuildMenu()
+        }
+    }
+
+    // Snapshot of the audio/display environment at boot, for context when
+    // reading the log after the fact.
+    private func logEnvironment() {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        Log.write("env: version=\(version) macOS=\(ProcessInfo.processInfo.operatingSystemVersionString)")
+        let devices = AudioRouter.listOutputDevices()
+        for d in devices {
+            Log.write("  device: \(d.name) (uid=\(d.uid) transport=\(Self.fourCC(d.transportType)))")
+        }
+        if let id = AudioRouter.currentDefaultOutput(), let name = AudioRouter.deviceName(id) {
+            Log.write("  default output: \(name)")
+        }
+        for screen in NSScreen.screens {
+            let tag = Screens.isBuiltIn(screen) ? " [built-in]" : ""
+            let mapped = ScreenDeviceMap.device(for: screen, among: devices)?.name ?? "(unmapped)"
+            Log.write("  screen: \(screen.localizedName)\(tag) → \(mapped)")
+        }
+    }
+
+    private static func fourCC(_ code: UInt32) -> String {
+        let bytes: [UInt8] = [
+            UInt8((code >> 24) & 0xff), UInt8((code >> 16) & 0xff),
+            UInt8((code >> 8) & 0xff),  UInt8(code & 0xff),
+        ]
+        return String(bytes: bytes, encoding: .ascii) ?? "\(code)"
     }
 
     // MARK: - Menu
