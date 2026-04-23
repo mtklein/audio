@@ -13,7 +13,7 @@ struct AudioFollowerApp {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private let watcher = NowPlayingWatcher()
+    private let watcher = OutputActivityWatcher()
     private let mediaKeys = MediaKeyListener()
     private var enabled = true
     private var lastStatusLine = "Idle"
@@ -91,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Core routing
 
-    private func handlePlayStart(_ event: NowPlayingWatcher.Event) {
+    private func handlePlayStart(_ event: OutputActivityWatcher.Event) {
         // XPC helpers (Safari Graphics and Media, Chrome renderers, etc.)
         // produce audio but don't own windows — resolve to the responsible
         // app PID so we can find the real window.

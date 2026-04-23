@@ -7,7 +7,7 @@ import Foundation
 // when one transitions off->on. This is deliberately not a property-change
 // listener: on macOS 26 those listeners appear to be silently gated for
 // un-entitled apps. Polling is cheap and reliable.
-final class NowPlayingWatcher {
+final class OutputActivityWatcher {
     struct Event {
         let pid: pid_t
         let appName: String?
@@ -26,14 +26,28 @@ final class NowPlayingWatcher {
         }
     }
 
-    // On-demand: find the process currently producing output (if any) and
-    // emit for it. Used as the media-key response.
+    // On-demand: find the process currently producing output and emit for
+    // it. Used as the media-key response. When multiple processes hold an
+    // output stream (e.g. Music + a browser both lingering), prefer one
+    // whose responsible app owns a visible window — background helpers or
+    // daemons with no UI are almost never what the user pressed a media
+    // key about.
     func rerouteExisting() {
-        for id in fetchProcessObjectIDs() where isRunningOutput(id) {
-            emit(for: id, reason: "media-key")
+        let producers = fetchProcessObjectIDs().compactMap { id -> (AudioObjectID, pid_t)? in
+            guard isRunningOutput(id),
+                  let pid = pidOf(id),
+                  pid > 0, pid != getpid()
+            else { return nil }
+            return (id, pid)
+        }
+        guard !producers.isEmpty else {
+            Log.write("rerouteExisting: no process is producing output")
             return
         }
-        Log.write("rerouteExisting: no process is producing output")
+        let chosen = producers.first { _, pid in
+            Screens.frontmostScreen(for: ProcessTree.responsiblePID(for: pid)) != nil
+        } ?? producers[0]
+        emit(for: chosen.0, reason: "media-key")
     }
 
     // MARK: - Poll

@@ -1,5 +1,4 @@
 import AppKit
-import Carbon.HIToolbox
 
 // Global monitor for the six system media keys (prev / play-pause / next /
 // mute / volume-down / volume-up). Any press triggers a re-evaluation of
@@ -14,7 +13,6 @@ final class MediaKeyListener {
     var onKey: ((Key) -> Void)?
 
     private var globalMonitor: Any?
-    private var localMonitor: Any?
 
     // NX_KEYTYPE_* constants from <IOKit/hidsystem/ev_keymap.h>.
     // On modern Apple keyboards, a tap of the next/prev buttons typically
@@ -32,13 +30,7 @@ final class MediaKeyListener {
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { [weak self] ev in
             self?.handle(ev)
         }
-        // Local monitor catches presses that happen while AudioFollower is
-        // (somehow) frontmost; harmless if unused.
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { [weak self] ev in
-            self?.handle(ev)
-            return ev
-        }
-        Log.write("MediaKeyListener installed (global=\(globalMonitor != nil), local=\(localMonitor != nil))")
+        Log.write("MediaKeyListener installed (global=\(globalMonitor != nil))")
     }
 
     private func handle(_ event: NSEvent) {
