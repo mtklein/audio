@@ -17,12 +17,16 @@ final class MediaKeyListener {
     private var localMonitor: Any?
 
     // NX_KEYTYPE_* constants from <IOKit/hidsystem/ev_keymap.h>.
+    // On modern Apple keyboards, a tap of the next/prev buttons typically
+    // sends FAST/REWIND rather than NEXT/PREVIOUS — hook both variants.
     private static let volumeUp: Int = 0
     private static let volumeDown: Int = 1
     private static let mute: Int = 7
     private static let play: Int = 16
     private static let next: Int = 17
     private static let previous: Int = 18
+    private static let fast: Int = 19
+    private static let rewind: Int = 20
 
     func start() {
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { [weak self] ev in
@@ -50,12 +54,14 @@ final class MediaKeyListener {
         let key: Key
         switch keyCode {
         case Self.play: key = .playPause
-        case Self.next: key = .next
-        case Self.previous: key = .previous
+        case Self.next, Self.fast: key = .next
+        case Self.previous, Self.rewind: key = .previous
         case Self.mute: key = .mute
         case Self.volumeUp: key = .volumeUp
         case Self.volumeDown: key = .volumeDown
-        default: return
+        default:
+            Log.write("unknown systemDefined keyCode=\(keyCode)")
+            return
         }
         Log.write("media key: \(key.rawValue)")
         onKey?(key)
