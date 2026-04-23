@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let watcher = OutputActivityWatcher()
     private let mediaKeys = MediaKeyListener()
+    private var relocateTimer: Timer?
     private var enabled = true
     private var lastStatusLine = "Idle"
 
@@ -33,6 +34,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.watcher.rerouteExisting()
         }
         mediaKeys.start()
+
+        // Silent drag-follow: if the playing window moved to a different
+        // screen, reroute. Runs infrequently so no concern for cost.
+        relocateTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.relocateIfWindowMoved()
+        }
     }
 
     // MARK: - Menu
@@ -126,6 +133,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let ok = AudioRouter.setDefaultOutput(target.id)
         updateStatus(ok ? "\(who) → \(target.name)" : "Failed → \(target.name)")
+    }
+
+    // Quiet counterpart to handlePlayStart: only touches the system when
+    // the producing window has actually moved to a screen that maps to a
+    // different device. No log spam, no status-line churn on every tick.
+    private func relocateIfWindowMoved() {
+        guard enabled,
+              let pid = watcher.primaryProducerPID()
+        else { return }
+        let resolvedPID = ProcessTree.responsiblePID(for: pid)
+        guard let screen = Screens.frontmostScreen(for: resolvedPID) else { return }
+        let devices = AudioRouter.listOutputDevices()
+        let managed = ScreenDeviceMap.managedDevices(among: devices)
+        guard let target = ScreenDeviceMap.device(for: screen, among: devices),
+              let currentID = AudioRouter.currentDefaultOutput()
+        else { return }
+        if currentID == target.id { return }
+        // Respect user choice of unmanaged outputs (AirPods, etc.).
+        if !managed.contains(where: { $0.id == currentID }) { return }
+        let who = NSRunningApplication(processIdentifier: resolvedPID)?.localizedName ?? "pid \(resolvedPID)"
+        let ok = AudioRouter.setDefaultOutput(target.id)
+        updateStatus(ok ? "\(who) moved → \(target.name)" : "Failed → \(target.name)")
     }
 
     private func updateStatus(_ text: String) {

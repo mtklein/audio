@@ -26,28 +26,32 @@ final class OutputActivityWatcher {
         }
     }
 
-    // On-demand: find the process currently producing output and emit for
-    // it. Used as the media-key response. When multiple processes hold an
+    // The PID that should be considered the primary audio producer — used
+    // both for "user pressed a media key, find the thing that's playing"
+    // and for silent drag-follow polling. When multiple processes hold an
     // output stream (e.g. Music + a browser both lingering), prefer one
-    // whose responsible app owns a visible window — background helpers or
-    // daemons with no UI are almost never what the user pressed a media
-    // key about.
-    func rerouteExisting() {
-        let producers = fetchProcessObjectIDs().compactMap { id -> (AudioObjectID, pid_t)? in
+    // whose responsible app owns a visible window; background helpers or
+    // daemons with no UI are almost never what the user cares about.
+    func primaryProducerPID() -> pid_t? {
+        let pids = fetchProcessObjectIDs().compactMap { id -> pid_t? in
             guard isRunningOutput(id),
                   let pid = pidOf(id),
                   pid > 0, pid != getpid()
             else { return nil }
-            return (id, pid)
+            return pid
         }
-        guard !producers.isEmpty else {
+        return pids.first { Screens.frontmostScreen(for: ProcessTree.responsiblePID(for: $0)) != nil }
+            ?? pids.first
+    }
+
+    // On-demand: reroute for whatever's currently producing output.
+    // Used as the media-key response.
+    func rerouteExisting() {
+        guard let pid = primaryProducerPID() else {
             Log.write("rerouteExisting: no process is producing output")
             return
         }
-        let chosen = producers.first { _, pid in
-            Screens.frontmostScreen(for: ProcessTree.responsiblePID(for: pid)) != nil
-        } ?? producers[0]
-        emit(for: chosen.0, reason: "media-key")
+        emitPID(pid, reason: "media-key")
     }
 
     // MARK: - Poll
@@ -63,7 +67,9 @@ final class OutputActivityWatcher {
             lastRunningOutput[id] = running
             if running && (was != true) {
                 let reason = (was == nil && fireForExisting) ? "startup" : "transition"
-                emit(for: id, reason: reason)
+                if let pid = pidOf(id), pid > 0, pid != getpid() {
+                    emitPID(pid, reason: reason)
+                }
             }
         }
     }
@@ -106,9 +112,7 @@ final class OutputActivityWatcher {
         return status == noErr ? pid : nil
     }
 
-    private func emit(for id: AudioObjectID, reason: String) {
-        guard let pid = pidOf(id), pid > 0 else { return }
-        if pid == getpid() { return }
+    private func emitPID(_ pid: pid_t, reason: String) {
         let appName = NSRunningApplication(processIdentifier: pid)?.localizedName
         Log.write("emit \(reason): pid=\(pid) (\(appName ?? "?"))")
         onPlayStart?(Event(pid: pid, appName: appName))
