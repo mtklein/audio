@@ -1,4 +1,5 @@
 import AppKit
+import CoreAudio
 
 @main
 struct AudioFollowerApp {
@@ -111,19 +112,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let toggle = NSMenuItem(title: "Auto-switch on play", action: #selector(toggleEnabled), keyEquivalent: "")
-        toggle.state = enabled ? .on : .off
-        toggle.target = self
-        menu.addItem(toggle)
+        let auto = NSMenuItem(title: "Auto-switch on play", action: #selector(selectAuto), keyEquivalent: "")
+        auto.state = enabled ? .on : .off
+        auto.target = self
+        menu.addItem(auto)
 
-        menu.addItem(.separator())
-
-        let devicesHeader = NSMenuItem(title: "Detected output devices", action: nil, keyEquivalent: "")
-        devicesHeader.isEnabled = false
-        menu.addItem(devicesHeader)
+        let currentID = AudioRouter.currentDefaultOutput()
         for d in AudioRouter.listOutputDevices() {
-            let item = NSMenuItem(title: "  \(d.name)", action: nil, keyEquivalent: "")
-            item.isEnabled = false
+            let item = NSMenuItem(title: d.name, action: #selector(selectDevice(_:)), keyEquivalent: "")
+            item.tag = Int(d.id)
+            item.state = (!enabled && currentID == d.id) ? .on : .off
+            item.target = self
             menu.addItem(item)
         }
 
@@ -134,9 +133,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    @objc private func toggleEnabled() {
-        enabled.toggle()
+    @objc private func selectAuto() {
+        enabled = true
         rebuildMenu()
+    }
+
+    @objc private func selectDevice(_ sender: NSMenuItem) {
+        let deviceID = AudioDeviceID(sender.tag)
+        let name = AudioRouter.deviceName(deviceID) ?? "id=\(deviceID)"
+        AudioRouter.setDefaultOutput(deviceID)
+        enabled = false
+        updateStatus("Manual: \(name)")
     }
 
     // MARK: - Core routing
