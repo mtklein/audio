@@ -1,5 +1,6 @@
 import AppKit
 import CoreAudio
+import Darwin
 import Foundation
 
 // Polls the public CoreAudio process-object API (macOS 14.4+) every 500ms
@@ -36,7 +37,7 @@ final class OutputActivityWatcher {
         let pids = fetchProcessObjectIDs().compactMap { id -> pid_t? in
             guard isRunningOutput(id),
                   let pid = pidOf(id),
-                  pid > 0, pid != getpid()
+                  pid > 0, pid != getpid(), isCurrentUser(pid)
             else { return nil }
             return pid
         }
@@ -67,12 +68,12 @@ final class OutputActivityWatcher {
             lastRunningOutput[id] = running
             if running && (was != true) {
                 let reason = (was == nil && fireForExisting) ? "startup" : "transition"
-                if let pid = pidOf(id), pid > 0, pid != getpid() {
+                if let pid = pidOf(id), pid > 0, pid != getpid(), isCurrentUser(pid) {
                     emitPID(pid, reason: reason)
                 }
             } else if !running && was == true {
                 // Log transition OFF so the log reads as a full narrative.
-                if let pid = pidOf(id), pid > 0, pid != getpid() {
+                if let pid = pidOf(id), pid > 0, pid != getpid(), isCurrentUser(pid) {
                     let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "?"
                     Log.write("audio stopped: pid=\(pid) (\(name))")
                 }
@@ -116,6 +117,14 @@ final class OutputActivityWatcher {
         var size = UInt32(MemoryLayout<pid_t>.size)
         let status = AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &pid)
         return status == noErr ? pid : nil
+    }
+
+    private func isCurrentUser(_ pid: pid_t) -> Bool {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.size
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0) == 0 else { return false }
+        return info.kp_eproc.e_ucred.cr_uid == getuid()
     }
 
     private func emitPID(_ pid: pid_t, reason: String) {
